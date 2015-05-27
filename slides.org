@@ -1,10 +1,10 @@
 * XML Processing in Clojure
 
-2015-May-26
-Craig Andera
-candera@cognitect.com
-@craigandera
-http://cognitect.com/podcast
+- 2015-May-26
+- Craig Andera
+- candera@cognitect.com
+- @craigandera
+- http://cognitect.com/podcast
 
 * The Problem
 
