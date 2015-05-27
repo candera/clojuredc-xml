@@ -1,0 +1,186 @@
+* XML Processing in Clojure
+
+2015-May-26
+Craig Andera
+candera@cognitect.com
+@craigandera
+http://cognitect.com/podcast
+
+* The Problem
+
+- Large e-Commerce website in the hotel space
+- Lots of XML representing rooms, availability, etc.
+- Uses XPath
+- XML processing 50% of CPU
+
+* Sample XML
+
+#+begin_src sgml
+  <results>
+    <room type="single">
+      <rate price="234.00" qualifier="aarp" />
+      <rate price="250.00" />
+    </room>
+    <room type="2 queen">
+      <rate price="350.00" qualifier="silver" />
+    </room>
+  </resultsN>
+#+end_src
+
+* XPath
+
+- Organized in steps
+- Each step has
+  - axis
+  - node test
+  - qualifier (optional)
+- Results of each step are input to the next
+- Abbreviated form available
+
+#+begin_src sgml
+  /child::results/child::room[attribute::type='single']/child::rate/attribute::price
+  /results/room[@type='single']/rate/@price
+#+end_src
+
+* The Issue
+
+- Slow
+- CPU intensive
+- Memory intensive
+
+* Alternatives
+
+- DOM (graph)
+- SAX (push)
+- StAX (pull)
+- clojure.data.xml
+
+* clojure.data.xml
+
+#+begin_src clojure
+  ;; lein try org.clojure/data.xml
+
+  (require '[clojure.data.xml :as xml])
+
+  (xml/parse-str
+  "<results>
+      <room type='single'>
+        <rate price='234.00' qualifier='aarp' />
+        <rate price='250.00' />
+      </room>
+      <room type='2 queen'>
+        <rate price='350.0' qualifier='silver' />
+      </room>
+    </results>")
+
+  ;; =>
+
+  {:tag :results,
+   :attrs {},
+   :content
+   ({:tag :room,
+     :attrs {:type "single"},
+     :content
+     ({:tag :rate,
+       :attrs {:price "234.00", :qualifier "aarp"},
+       :content ()}
+      {:tag :rate, :attrs {:price "250.00"}, :content ()})}
+    {:tag :room,
+     :attrs {:type "2 queen"},
+     :content
+     ({:tag :rate,
+       :attrs {:price "350.0", :qualifier "silver"},
+       :content ()})})}
+#+end_src
+
+* Characteristics
+
+- Better on CPU
+- Better on memory
+- Would require fair amount of rewriting
+
+* Solution: Simple DSL
+
+- An XPath-like grammar for selecting nodes
+- Selection is via a vector which can contain:
+  - A keyword: matches child element name
+  - A map: matches one or more attribute values
+  - A function: a predicate test against current node
+  - A vector: logical AND of its contents
+
+* Examples
+#+begin_src clojure
+  ;; /foo/bar/quux =>
+  [:foo :bar :quux]
+
+  ;; /results/room[@type='queen']/rate =>
+  [:results [:room {:type "queen"}] :rate]
+
+  ;; /results/room/rate/@price =>
+  ;; No syntax
+
+  ;; /results/room[rate/@price < 100] =>
+  [:results [:room #(< (get-price %) 100)]]
+#+end_src
+
+* Outcome
+
+- Porting the existing code was trivial
+  - A small number of statements had to be hand-coded
+- Cluster size shrank from ~18 at peak to ~6
+- Might have gone smaller
+- Overall about 5x more efficient
+
+* Lessons
+
+- The perf win wasn't clojure.data.xml
+- The perf win wasn't Clojure
+- The perf win was SAX
+- The translation win was the DSL
+- The DSL was probably only appropriate for this usage
+
+* Let's write it!
+
+#+begin_src clojure
+  (defn matches? [element step]
+    (cond
+      (keyword? step)
+      (= step (:tag element))
+
+      (map? step)
+      (every? (fn [[attr-name attr-val]]
+                (-> element
+                  :attrs
+                  (get attr-name)
+                  (= attr-val))))
+
+      (vector? step)
+      (every? (fn [substep] (matches? element substep)) step)
+
+      (ifn? step)
+      (step element)))
+#+end_src
+
+#+begin_src clojure
+  (defn select
+    [element path]
+    (let [[head & more] path
+          matches (->> element
+                    :content
+                    (filter :tag)
+                    (filter #(matches? % head)))]
+      (if more
+        (reduce into [] (mapv #(select % more) matches))
+        matches)))
+#+end_src
+
+#+RESULTS:
+
+* More Complex XML
+
+- http://feeds.feedburner.com/cognicast?format=xml
+- Parseable HTML
+
+
+
+
